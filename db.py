@@ -76,11 +76,22 @@ def init_db():
         """)
         _execute(conn, """
             CREATE TABLE IF NOT EXISTS subscriptions (
-                guild_id    TEXT PRIMARY KEY,
-                channel_id  TEXT NOT NULL,
-                categories  TEXT NOT NULL DEFAULT '[]'
+                guild_id        TEXT PRIMARY KEY,
+                channel_id      TEXT NOT NULL,
+                categories      TEXT NOT NULL DEFAULT '[]',
+                interval_hours  INTEGER NOT NULL DEFAULT 24,
+                last_posted_at  TEXT
             )
         """)
+        # Add columns if upgrading from older schema
+        for col, definition in [
+            ("interval_hours", "INTEGER NOT NULL DEFAULT 24"),
+            ("last_posted_at", "TEXT"),
+        ]:
+            try:
+                _execute(conn, f"ALTER TABLE subscriptions ADD COLUMN {col} {definition}")
+            except Exception:
+                pass  # column already exists
 
 
 # ── Articles ──────────────────────────────────────────────────────────────────
@@ -144,12 +155,28 @@ def mark_posted(cluster_ids: list):
 
 # ── Subscriptions ─────────────────────────────────────────────────────────────
 
-def upsert_subscription(guild_id: str, channel_id: str, categories: list = None):
+def upsert_subscription(guild_id: str, channel_id: str, categories: list = None, interval_hours: int = None):
+    with get_conn() as conn:
+        if interval_hours is not None:
+            _execute(conn,
+                "INSERT INTO subscriptions (guild_id, channel_id, categories, interval_hours) VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id, "
+                "categories = EXCLUDED.categories, interval_hours = EXCLUDED.interval_hours",
+                (guild_id, channel_id, json.dumps(categories or []), interval_hours),
+            )
+        else:
+            _execute(conn,
+                "INSERT INTO subscriptions (guild_id, channel_id, categories) VALUES (%s, %s, %s) "
+                "ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id, categories = EXCLUDED.categories",
+                (guild_id, channel_id, json.dumps(categories or [])),
+            )
+
+
+def update_last_posted(guild_id: str):
     with get_conn() as conn:
         _execute(conn,
-            "INSERT INTO subscriptions (guild_id, channel_id, categories) VALUES (%s, %s, %s) "
-            "ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id, categories = EXCLUDED.categories",
-            (guild_id, channel_id, json.dumps(categories or [])),
+            "UPDATE subscriptions SET last_posted_at = %s WHERE guild_id = %s",
+            (datetime.utcnow().isoformat(), guild_id),
         )
 
 

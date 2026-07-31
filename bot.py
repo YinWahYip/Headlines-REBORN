@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, time
+from datetime import datetime, timedelta
 
 import discord
 from discord import app_commands
@@ -8,7 +8,7 @@ from discord.ext import commands, tasks
 import db
 import fetcher
 import pipeline
-from config import DISCORD_TOKEN, FETCH_INTERVAL_MINUTES, DIGEST_HOUR_UTC, CATEGORIES
+from config import DISCORD_TOKEN, FETCH_INTERVAL_MINUTES, CATEGORIES
 
 # ── Bot setup ─────────────────────────────────────────────────────────────────
 
@@ -85,8 +85,8 @@ async def on_ready():
     db.init_db()
     await bot.tree.sync()
     fetch_loop.start()
-    daily_digest.start()
-    print(f"[bot] Ready as {bot.user} — fetch every {FETCH_INTERVAL_MINUTES}min, digest at {DIGEST_HOUR_UTC}:00 UTC")
+    digest_loop.start()
+    print(f"[bot] Ready as {bot.user} — fetch every {FETCH_INTERVAL_MINUTES}min, digest check every hour")
 
 
 # ── Background tasks ──────────────────────────────────────────────────────────
@@ -98,33 +98,42 @@ async def fetch_loop():
         pipeline.process_articles(articles)
 
 
-@tasks.loop(time=time(hour=DIGEST_HOUR_UTC, minute=0))
-async def daily_digest():
-    clusters = db.get_unposted_clusters()
-    if not clusters:
-        return
-
-    cluster_ids = [c["id"] for c in clusters]
+@tasks.loop(minutes=60)
+async def digest_loop():
+    """Check every hour whether any guild is due for a digest."""
+    now = datetime.utcnow()
     subs = db.get_all_subscriptions()
 
     for sub in subs:
+        interval_hours = sub.get("interval_hours", 24)
+        last_posted = sub.get("last_posted_at")
+
+        # Determine if this guild is due
+        if last_posted:
+            due_at = datetime.fromisoformat(last_posted) + timedelta(hours=interval_hours)
+            if now < due_at:
+                continue  # not yet
+
         channel = bot.get_channel(int(sub["channel_id"]))
         if not channel:
             continue
 
-        # Filter by subscribed categories if the guild has preferences set
         sub_cats = json.loads(sub["categories"])
+        clusters = db.get_unposted_clusters()
         filtered = (
             [c for c in clusters if c["category"] in sub_cats]
             if sub_cats else clusters
         )
 
+        if not filtered:
+            continue
+
         try:
-            await send_clusters(channel, filtered, header="📰 Daily News Digest")
+            await send_clusters(channel, filtered, header=f"📰 News Digest (every {interval_hours}h)")
+            db.update_last_posted(sub["guild_id"])
+            db.mark_posted([c["id"] for c in filtered])
         except discord.Forbidden:
             print(f"[bot] No permission to post in channel {sub['channel_id']}")
-
-    db.mark_posted(cluster_ids)
 
 
 # ── Slash commands ────────────────────────────────────────────────────────────
@@ -227,6 +236,33 @@ async def cmd_focus(interaction: discord.Interaction, topics: str = None):
     if invalid:
         msg += f"\nIgnored (not recognised): {', '.join(invalid)}"
     await interaction.response.send_message(msg, ephemeral=True)
+
+
+@bot.tree.command(name="setinterval", description="Set how often the digest posts automatically (in hours)")
+@app_commands.describe(hours="Posting interval in hours, e.g. 6, 12, or 24")
+async def cmd_setinterval(interaction: discord.Interaction, hours: int):
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message("You need Manage Channels permission.", ephemeral=True)
+        return
+
+    sub = db.get_subscription(str(interaction.guild_id))
+    if not sub:
+        await interaction.response.send_message(
+            "No digest channel set. Run `/setup` first.", ephemeral=True
+        )
+        return
+
+    if hours < 1 or hours > 168:
+        await interaction.response.send_message(
+            "Interval must be between 1 and 168 hours (1 week).", ephemeral=True
+        )
+        return
+
+    cats = json.loads(sub["categories"])
+    db.upsert_subscription(str(interaction.guild_id), sub["channel_id"], categories=cats, interval_hours=hours)
+    await interaction.response.send_message(
+        f"Digest will now post every **{hours} hour{'s' if hours != 1 else ''}**.", ephemeral=True
+    )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

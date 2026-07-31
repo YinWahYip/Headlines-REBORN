@@ -8,7 +8,6 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 
 FETCH_INTERVAL_MINUTES = 60
-DIGEST_HOUR_UTC = 8  # daily digest at 8 AM UTC
 
 # Add or remove feeds freely — name is what shows up as the outlet label
 FEEDS = [
