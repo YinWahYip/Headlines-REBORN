@@ -4,7 +4,7 @@ import anthropic
 from config import ANTHROPIC_API_KEY, CATEGORIES
 import db
 
-client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
 
 BATCH_SIZE = 40
 BATCH_DELAY_SEC = 2

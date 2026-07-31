@@ -13,7 +13,7 @@ FETCH_INTERVAL_MINUTES = 60
 FEEDS = [
     {"name": "NPR",         "url": "https://feeds.npr.org/1001/rss.xml"},
     {"name": "ABC News",    "url": "https://abcnews.com/abcnews/topstories"},
-    {"name": "Google",         "url": "https://news.google.com/rss/search?q=site%3Areuters.com&hl=en-US&gl=US&ceid=US%3Aen"},
+    {"name": "Google",      "url": "https://news.google.com/rss/search?q=site%3Areuters.com&hl=en-US&gl=US&ceid=US%3Aen"},
 
 ]
 

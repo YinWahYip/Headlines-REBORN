@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime, timedelta
 
@@ -8,7 +9,7 @@ from discord.ext import commands, tasks
 import db
 import fetcher
 import pipeline
-from config import DISCORD_TOKEN, FETCH_INTERVAL_MINUTES, CATEGORIES
+from config import DISCORD_TOKEN, FETCH_INTERVAL_MINUTES, CATEGORIES, FEEDS
 
 # ── Bot setup ─────────────────────────────────────────────────────────────────
 
@@ -73,14 +74,21 @@ def make_embed(cluster: dict) -> discord.Embed:
 
 
 def apply_filters(clusters: list, sub: dict) -> list:
-    """Apply whitelist (focus) and blacklist to a cluster list."""
+    """Apply category blacklist, category whitelist (focus), and source filter."""
     blacklist = json.loads(sub.get("blacklist") or "[]")
     whitelist = json.loads(sub.get("categories") or "[]")
+    allowed_sources = json.loads(sub.get("sources") or "[]")
     result = clusters
     if blacklist:
         result = [c for c in result if c["category"] not in blacklist]
     if whitelist:
         result = [c for c in result if c["category"] in whitelist]
+    if allowed_sources:
+        # Keep cluster if at least one of its outlets is in the allowed list
+        def has_allowed_source(c):
+            outlets = json.loads(c["outlets"]) if isinstance(c["outlets"], str) else c["outlets"]
+            return any(o in allowed_sources for o in outlets)
+        result = [c for c in result if has_allowed_source(c)]
     return result
 
 
@@ -117,10 +125,13 @@ async def on_ready():
 @tasks.loop(minutes=FETCH_INTERVAL_MINUTES)
 async def fetch_loop():
     global last_fetched_at
-    articles = fetcher.fetch_new_articles()
-    last_fetched_at = datetime.utcnow()
-    if articles:
-        pipeline.process_articles(articles)
+    try:
+        articles = fetcher.fetch_new_articles()
+        last_fetched_at = datetime.utcnow()
+        if articles:
+            pipeline.process_articles(articles)
+    except Exception as e:
+        print(f"[fetch_loop] Error (will retry next cycle): {e}")
 
 
 @tasks.loop(minutes=60)
@@ -167,14 +178,20 @@ async def digest_loop():
 async def cmd_digest(interaction: discord.Interaction, category: str = None, limit: int = 5):
     await interaction.response.defer()
     limit = max(1, min(limit, 20))
-    sub = db.get_subscription(str(interaction.guild_id))
-    clusters = db.get_unposted_clusters(category_filter=category)
-    # Apply server blacklist/whitelist unless a specific category was requested
-    if sub and not category:
-        clusters = apply_filters(clusters, sub)
-    header = f"📰 Latest: {category}" if category else "📰 Latest Stories"
-    await send_clusters(interaction.channel, clusters[:limit], header=header)
-    await interaction.followup.send("Done.", ephemeral=True)
+
+    async def _run():
+        sub = db.get_subscription(str(interaction.guild_id))
+        clusters = db.get_unposted_clusters(category_filter=category)
+        if sub and not category:
+            clusters = apply_filters(clusters, sub)
+        header = f"📰 Latest: {category}" if category else "📰 Latest Stories"
+        await send_clusters(interaction.channel, clusters[:limit], header=header)
+        await interaction.followup.send("Done.", ephemeral=True)
+
+    try:
+        await asyncio.wait_for(_run(), timeout=10)
+    except asyncio.TimeoutError:
+        await interaction.followup.send("⏱ Timed out — try again in a moment.", ephemeral=True)
 
 
 @bot.tree.command(name="setup", description="Set this channel to receive the daily digest")
@@ -343,6 +360,73 @@ async def cmd_status(interaction: discord.Interaction):
         lines.append("⚠️ No digest channel set — run `/setup`")
 
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+
+@bot.tree.command(name="sources", description="List available news sources and which ones are active for this server")
+async def cmd_sources(interaction: discord.Interaction):
+    sub = db.get_subscription(str(interaction.guild_id))
+    active = json.loads(sub.get("sources") or "[]") if sub else []
+
+    lines = []
+    for feed in FEEDS:
+        name = feed["name"]
+        check = "✓" if (not active or name in active) else "✗"
+        lines.append(f"• {check} {name}")
+
+    header = "**News sources** (✓ = included in your digest):"
+    if active:
+        header += f"\nUsing {len(active)} of {len(FEEDS)} sources. Use `/setsources all` to reset."
+    await interaction.response.send_message(header + "\n" + "\n".join(lines), ephemeral=True)
+
+
+@bot.tree.command(name="setsources", description="Choose which news sources to include (comma-separated, or 'all')")
+@app_commands.describe(names="e.g. 'BBC, NPR' or 'all' to include everything")
+async def cmd_setsources(interaction: discord.Interaction, names: str = None):
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message("You need Manage Channels permission.", ephemeral=True)
+        return
+
+    sub = db.get_subscription(str(interaction.guild_id))
+    if not sub:
+        await interaction.response.send_message("No digest channel set. Run `/setup` first.", ephemeral=True)
+        return
+
+    # No arg — show current
+    if names is None:
+        current = json.loads(sub.get("sources") or "[]")
+        if current:
+            await interaction.response.send_message(
+                f"Active sources: **{', '.join(current)}**\nUse `/setsources all` to include everything.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message(
+                "All sources are included. Use `/setsources <names>` to narrow it.", ephemeral=True
+            )
+        return
+
+    if names.strip().lower() == "all":
+        db.upsert_subscription(str(interaction.guild_id), sub["channel_id"], sources=[])
+        await interaction.response.send_message("Reset — all sources included.", ephemeral=True)
+        return
+
+    available = {f["name"].lower(): f["name"] for f in FEEDS}
+    requested = [n.strip() for n in names.split(",") if n.strip()]
+    valid = [available[n.lower()] for n in requested if n.lower() in available]
+    invalid = [n for n in requested if n.lower() not in available]
+
+    if not valid:
+        source_list = ", ".join(f["name"] for f in FEEDS)
+        await interaction.response.send_message(
+            f"None matched. Available sources: {source_list}", ephemeral=True
+        )
+        return
+
+    db.upsert_subscription(str(interaction.guild_id), sub["channel_id"], sources=valid)
+    msg = f"Now pulling from: **{', '.join(valid)}**"
+    if invalid:
+        msg += f"\nNot recognised: {', '.join(invalid)}"
+    await interaction.response.send_message(msg, ephemeral=True)
 
 
 @bot.tree.command(name="setinterval", description="Set how often the digest posts automatically (in hours)")

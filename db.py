@@ -84,6 +84,7 @@ def init_db():
                 channel_id      TEXT NOT NULL,
                 categories      TEXT NOT NULL DEFAULT '[]',
                 blacklist       TEXT NOT NULL DEFAULT '[]',
+                sources         TEXT NOT NULL DEFAULT '[]',
                 interval_hours  INTEGER NOT NULL DEFAULT 24,
                 last_posted_at  TEXT
             )
@@ -93,6 +94,7 @@ def init_db():
             ("interval_hours", "INTEGER NOT NULL DEFAULT 24"),
             ("last_posted_at", "TEXT"),
             ("blacklist", "TEXT NOT NULL DEFAULT '[]'"),
+            ("sources", "TEXT NOT NULL DEFAULT '[]'"),
         ]:
             try:
                 _execute(conn, f"ALTER TABLE subscriptions ADD COLUMN {col} {definition}")
@@ -162,7 +164,7 @@ def mark_posted(cluster_ids: list):
 # ── Subscriptions ─────────────────────────────────────────────────────────────
 
 def upsert_subscription(guild_id: str, channel_id: str, categories: list = None,
-                        interval_hours: int = None, blacklist: list = None):
+                        interval_hours: int = None, blacklist: list = None, sources: list = None):
     with get_conn() as conn:
         # Build dynamic update based on what's provided
         fields = {"channel_id": channel_id, "categories": json.dumps(categories or [])}
@@ -170,6 +172,8 @@ def upsert_subscription(guild_id: str, channel_id: str, categories: list = None,
             fields["interval_hours"] = interval_hours
         if blacklist is not None:
             fields["blacklist"] = json.dumps(blacklist)
+        if sources is not None:
+            fields["sources"] = json.dumps(sources)
 
         cols = ", ".join(fields.keys())
         placeholders = ", ".join(["%s"] * len(fields))

@@ -1,7 +1,10 @@
+import socket
 import feedparser
 from datetime import datetime
 from config import FEEDS
 import db
+
+FEED_TIMEOUT_SEC = 15  # max seconds to wait for any single feed
 
 MAX_PER_FEED = 2  # hard cap on new articles pulled per source per fetch
 
@@ -29,8 +32,12 @@ def fetch_new_articles() -> list[dict]:
 
     for feed_cfg in FEEDS:
         try:
+            old_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(FEED_TIMEOUT_SEC)
             parsed = feedparser.parse(feed_cfg["url"])
+            socket.setdefaulttimeout(old_timeout)
         except Exception as e:
+            socket.setdefaulttimeout(old_timeout)
             print(f"[fetcher] Failed to fetch {feed_cfg['name']}: {e}")
             continue
 
