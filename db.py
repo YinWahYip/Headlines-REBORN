@@ -5,13 +5,17 @@ from datetime import datetime
 
 import psycopg2
 import psycopg2.extras
+from dotenv import load_dotenv
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+load_dotenv()
 
 
 @contextmanager
 def get_conn():
-    conn = psycopg2.connect(DATABASE_URL)
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise RuntimeError("DATABASE_URL is not set")
+    conn = psycopg2.connect(url)
     try:
         yield conn
         conn.commit()
@@ -79,6 +83,7 @@ def init_db():
                 guild_id        TEXT PRIMARY KEY,
                 channel_id      TEXT NOT NULL,
                 categories      TEXT NOT NULL DEFAULT '[]',
+                blacklist       TEXT NOT NULL DEFAULT '[]',
                 interval_hours  INTEGER NOT NULL DEFAULT 24,
                 last_posted_at  TEXT
             )
@@ -87,6 +92,7 @@ def init_db():
         for col, definition in [
             ("interval_hours", "INTEGER NOT NULL DEFAULT 24"),
             ("last_posted_at", "TEXT"),
+            ("blacklist", "TEXT NOT NULL DEFAULT '[]'"),
         ]:
             try:
                 _execute(conn, f"ALTER TABLE subscriptions ADD COLUMN {col} {definition}")
@@ -155,21 +161,24 @@ def mark_posted(cluster_ids: list):
 
 # ── Subscriptions ─────────────────────────────────────────────────────────────
 
-def upsert_subscription(guild_id: str, channel_id: str, categories: list = None, interval_hours: int = None):
+def upsert_subscription(guild_id: str, channel_id: str, categories: list = None,
+                        interval_hours: int = None, blacklist: list = None):
     with get_conn() as conn:
+        # Build dynamic update based on what's provided
+        fields = {"channel_id": channel_id, "categories": json.dumps(categories or [])}
         if interval_hours is not None:
-            _execute(conn,
-                "INSERT INTO subscriptions (guild_id, channel_id, categories, interval_hours) VALUES (%s, %s, %s, %s) "
-                "ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id, "
-                "categories = EXCLUDED.categories, interval_hours = EXCLUDED.interval_hours",
-                (guild_id, channel_id, json.dumps(categories or []), interval_hours),
-            )
-        else:
-            _execute(conn,
-                "INSERT INTO subscriptions (guild_id, channel_id, categories) VALUES (%s, %s, %s) "
-                "ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id, categories = EXCLUDED.categories",
-                (guild_id, channel_id, json.dumps(categories or [])),
-            )
+            fields["interval_hours"] = interval_hours
+        if blacklist is not None:
+            fields["blacklist"] = json.dumps(blacklist)
+
+        cols = ", ".join(fields.keys())
+        placeholders = ", ".join(["%s"] * len(fields))
+        updates = ", ".join(f"{k} = EXCLUDED.{k}" for k in fields)
+        _execute(conn,
+            f"INSERT INTO subscriptions (guild_id, {cols}) VALUES (%s, {placeholders}) "
+            f"ON CONFLICT (guild_id) DO UPDATE SET {updates}",
+            (guild_id, *fields.values()),
+        )
 
 
 def update_last_posted(guild_id: str):

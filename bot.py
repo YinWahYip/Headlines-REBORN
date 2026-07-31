@@ -15,6 +15,8 @@ from config import DISCORD_TOKEN, FETCH_INTERVAL_MINUTES, CATEGORIES
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+last_fetched_at: datetime | None = None
+
 
 # ── Formatting ────────────────────────────────────────────────────────────────
 
@@ -57,8 +59,29 @@ def make_embed(cluster: dict) -> discord.Embed:
         links = "  ·  ".join(f"[{a['source']}]({a['url']})" for a in articles)
         embed.add_field(name="Read more", value=links, inline=False)
 
-    embed.set_footer(text="  ·  ".join(outlets))
+    # Timestamp: when the cluster was processed
+    created_at = cluster.get("created_at")
+    footer_parts = ["  ·  ".join(outlets)]
+    if created_at:
+        try:
+            dt = datetime.fromisoformat(created_at)
+            footer_parts.append(dt.strftime("Pulled %b %d %H:%M UTC"))
+        except ValueError:
+            pass
+    embed.set_footer(text="  ·  ".join(footer_parts))
     return embed
+
+
+def apply_filters(clusters: list, sub: dict) -> list:
+    """Apply whitelist (focus) and blacklist to a cluster list."""
+    blacklist = json.loads(sub.get("blacklist") or "[]")
+    whitelist = json.loads(sub.get("categories") or "[]")
+    result = clusters
+    if blacklist:
+        result = [c for c in result if c["category"] not in blacklist]
+    if whitelist:
+        result = [c for c in result if c["category"] in whitelist]
+    return result
 
 
 def chunk(lst, size):
@@ -93,7 +116,9 @@ async def on_ready():
 
 @tasks.loop(minutes=FETCH_INTERVAL_MINUTES)
 async def fetch_loop():
+    global last_fetched_at
     articles = fetcher.fetch_new_articles()
+    last_fetched_at = datetime.utcnow()
     if articles:
         pipeline.process_articles(articles)
 
@@ -118,12 +143,8 @@ async def digest_loop():
         if not channel:
             continue
 
-        sub_cats = json.loads(sub["categories"])
         clusters = db.get_unposted_clusters()
-        filtered = (
-            [c for c in clusters if c["category"] in sub_cats]
-            if sub_cats else clusters
-        )
+        filtered = apply_filters(clusters, sub)
 
         if not filtered:
             continue
@@ -145,8 +166,12 @@ async def digest_loop():
 )
 async def cmd_digest(interaction: discord.Interaction, category: str = None, limit: int = 5):
     await interaction.response.defer()
-    limit = max(1, min(limit, 20))  # clamp between 1 and 20
+    limit = max(1, min(limit, 20))
+    sub = db.get_subscription(str(interaction.guild_id))
     clusters = db.get_unposted_clusters(category_filter=category)
+    # Apply server blacklist/whitelist unless a specific category was requested
+    if sub and not category:
+        clusters = apply_filters(clusters, sub)
     header = f"📰 Latest: {category}" if category else "📰 Latest Stories"
     await send_clusters(interaction.channel, clusters[:limit], header=header)
     await interaction.followup.send("Done.", ephemeral=True)
@@ -236,6 +261,88 @@ async def cmd_focus(interaction: discord.Interaction, topics: str = None):
     if invalid:
         msg += f"\nIgnored (not recognised): {', '.join(invalid)}"
     await interaction.response.send_message(msg, ephemeral=True)
+
+
+@bot.tree.command(name="blacklist", description="Block categories from appearing in digests (comma-separated, or 'clear')")
+@app_commands.describe(topics="e.g. 'Sports, Other' or 'clear' to remove all blocks")
+async def cmd_blacklist(interaction: discord.Interaction, topics: str = None):
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message("You need Manage Channels permission.", ephemeral=True)
+        return
+
+    sub = db.get_subscription(str(interaction.guild_id))
+    if not sub:
+        await interaction.response.send_message("No digest channel set. Run `/setup` first.", ephemeral=True)
+        return
+
+    # No arg — show current blacklist
+    if topics is None:
+        current = json.loads(sub.get("blacklist") or "[]")
+        if current:
+            await interaction.response.send_message(
+                f"Currently blocked: **{', '.join(current)}**\nUse `/blacklist clear` to unblock all.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message(
+                "No categories blocked. Use `/blacklist <topics>` to block some.", ephemeral=True
+            )
+        return
+
+    if topics.strip().lower() == "clear":
+        db.upsert_subscription(str(interaction.guild_id), sub["channel_id"], blacklist=[])
+        await interaction.response.send_message("Blacklist cleared — all categories allowed.", ephemeral=True)
+        return
+
+    requested = [t.strip() for t in topics.split(",") if t.strip()]
+    valid = [t for t in requested if t in CATEGORIES]
+    invalid = [t for t in requested if t not in CATEGORIES]
+
+    if not valid:
+        await interaction.response.send_message(
+            "None matched. Use `/categories` to see valid options.", ephemeral=True
+        )
+        return
+
+    db.upsert_subscription(str(interaction.guild_id), sub["channel_id"], blacklist=valid)
+    msg = f"Blocked: **{', '.join(valid)}** — these won't appear in digests."
+    if invalid:
+        msg += f"\nIgnored (not recognised): {', '.join(invalid)}"
+    await interaction.response.send_message(msg, ephemeral=True)
+
+
+@bot.tree.command(name="status", description="Show bot status and last fetch time")
+async def cmd_status(interaction: discord.Interaction):
+    sub = db.get_subscription(str(interaction.guild_id))
+    lines = []
+
+    if last_fetched_at:
+        lines.append(f"🕐 Last fetch: {last_fetched_at.strftime('%b %d %H:%M UTC')}")
+    else:
+        lines.append("🕐 Last fetch: not yet (restarts clear this)")
+
+    if sub:
+        interval = sub.get("interval_hours", 24)
+        last_posted = sub.get("last_posted_at")
+        lines.append(f"📬 Digest interval: every {interval}h")
+        if last_posted:
+            try:
+                dt = datetime.fromisoformat(last_posted)
+                lines.append(f"📤 Last digest posted: {dt.strftime('%b %d %H:%M UTC')}")
+                next_post = dt + timedelta(hours=interval)
+                lines.append(f"⏭ Next digest: {next_post.strftime('%b %d %H:%M UTC')}")
+            except ValueError:
+                pass
+        blacklisted = json.loads(sub.get("blacklist") or "[]")
+        focused = json.loads(sub.get("categories") or "[]")
+        if blacklisted:
+            lines.append(f"🚫 Blocked: {', '.join(blacklisted)}")
+        if focused:
+            lines.append(f"✅ Focus: {', '.join(focused)}")
+    else:
+        lines.append("⚠️ No digest channel set — run `/setup`")
+
+    await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
 
 @bot.tree.command(name="setinterval", description="Set how often the digest posts automatically (in hours)")
