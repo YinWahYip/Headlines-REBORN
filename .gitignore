@@ -4,3 +4,4 @@ newsbot.db
 newsbot.db
 .env
 newsbot.db
+__pycache__/
