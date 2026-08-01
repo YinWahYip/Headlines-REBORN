@@ -151,6 +151,19 @@ def get_unposted_clusters(category_filter: str = None) -> list:
         )
 
 
+def get_recent_clusters(category_filter: str = None, limit: int = 50) -> list:
+    """For manual /digest — returns recent clusters regardless of posted status."""
+    with get_conn() as conn:
+        if category_filter:
+            return _fetchall(conn,
+                "SELECT * FROM clusters WHERE LOWER(category) LIKE %s ORDER BY created_at DESC LIMIT %s",
+                (f"%{category_filter.lower()}%", limit),
+            )
+        return _fetchall(conn,
+            "SELECT * FROM clusters ORDER BY created_at DESC LIMIT %s", (limit,)
+        )
+
+
 def mark_posted(cluster_ids: list):
     if not cluster_ids:
         return

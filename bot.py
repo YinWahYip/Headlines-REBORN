@@ -181,7 +181,7 @@ async def cmd_digest(interaction: discord.Interaction, category: str = None, lim
 
     async def _run():
         sub = db.get_subscription(str(interaction.guild_id))
-        clusters = db.get_unposted_clusters(category_filter=category)
+        clusters = db.get_recent_clusters(category_filter=category)
         if sub and not category:
             clusters = apply_filters(clusters, sub)
         header = f"📰 Latest: {category}" if category else "📰 Latest Stories"
