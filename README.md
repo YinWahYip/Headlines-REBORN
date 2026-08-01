@@ -1,6 +1,6 @@
 # Headlines Reborn
 
-A Discord bot that pulls RSS headlines from multiple news sources, uses an LLM to deduplicate, categorize, and summarize them, then delivers stories via slash commands or automatic digests.
+Discord bot that pulls RSS headlines from multiple news sources, uses an LLM to deduplicate, categorize, and summarize them, then delivers stories via slash commands or automatic digests.
 
 ## How it works
 
@@ -86,6 +86,23 @@ Examples:
 
 ### `/sources`
 List all available news sources and which ones are active for this server.
+NPR: [https://feeds.npr.org/1001/rss.xml](https://feeds.npr.org/1001/rss.xml)
+
+AP News: [https://feedx.net/rss/ap.xml](https://feedx.net/rss/ap.xml)
+
+ABC News: [https://abcnews.com/abcnews/topstories](https://abcnews.com/abcnews/topstories)
+
+Google: [https://news.google.com/rss/search?q=site%3Areuters.com&hl=en-US&gl=US&ceid=US%3Aen](https://news.google.com/rss/search?q=site%3Areuters.com&hl=en-US&gl=US&ceid=US%3Aen)
+
+AP News: [https://rsshub.app/apnews/topics/apf-topnews](https://rsshub.app/apnews/topics/apf-topnews)
+
+Bloomberg - Tech: [https://www.bloomberg.com/feeds/technology/news.rss](https://www.bloomberg.com/feeds/technology/news.rss)
+
+XinHua - World: [https://www.xinhuanet.com/english/rss/worldrss.xml](https://www.xinhuanet.com/english/rss/worldrss.xml)
+
+XinHua - China: [https://www.xinhuanet.com/english/rss/chinarss.xml](https://www.xinhuanet.com/english/rss/chinarss.xml)
+
+XinHua - Sci & Tech: [http://www.xinhuanet.com/english/rss/scirss.xml](http://www.xinhuanet.com/english/rss/scirss.xml)
 
 ---
 
