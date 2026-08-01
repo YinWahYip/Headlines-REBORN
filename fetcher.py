@@ -3,6 +3,9 @@ import feedparser
 from datetime import datetime
 from config import FEEDS
 import db
+from zoneinfo import ZoneInfo
+
+ET = ZoneInfo("America/New_York")
 
 FEED_TIMEOUT_SEC = 15  # max seconds to wait for any single feed
 
@@ -54,8 +57,7 @@ def fetch_new_articles() -> list[dict]:
             if db.url_seen(url):
                 continue
 
-            published = entry.get("published", datetime.utcnow().isoformat())
-
+            published = entry.get("published", datetime.now(ET).isoformat())
             article_id = db.insert_article(url, title, feed_cfg["name"], str(published))
             new_articles.append({
                 "id": article_id,
