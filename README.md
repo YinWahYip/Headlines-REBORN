@@ -86,6 +86,7 @@ Examples:
 
 ### `/sources`
 List all available news sources and which ones are active for this server.
+
 NPR: [https://feeds.npr.org/1001/rss.xml](https://feeds.npr.org/1001/rss.xml)
 
 AP News: [https://feedx.net/rss/ap.xml](https://feedx.net/rss/ap.xml)
