@@ -7,7 +7,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 
-FETCH_INTERVAL_MINUTES = 60
+FETCH_INTERVAL_MINUTES = 240
 
 # Add or remove feeds freely — name is what shows up as the outlet label
 FEEDS = [

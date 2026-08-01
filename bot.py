@@ -160,8 +160,9 @@ async def digest_loop():
         if not filtered:
             continue
 
+        digest_limit = sub.get("digest_limit") or 10
         try:
-            await send_clusters(channel, filtered, header=f"📰 News Digest (every {interval_hours}h)")
+            await send_clusters(channel, filtered[:digest_limit], header=f"📰 News Digest (every {interval_hours}h)")
             db.update_last_posted(sub["guild_id"])
             db.mark_posted([c["id"] for c in filtered])
         except discord.Forbidden:
@@ -173,19 +174,20 @@ async def digest_loop():
 @bot.tree.command(name="digest", description="Get the latest news stories")
 @app_commands.describe(
     category="Optional topic filter, e.g. Economics or China",
-    limit="How many stories to show (default 5, max 20)",
+    limit="How many stories to show (uses your server's saved limit if not set, max 50)",
 )
-async def cmd_digest(interaction: discord.Interaction, category: str = None, limit: int = 5):
+async def cmd_digest(interaction: discord.Interaction, category: str = None, limit: int = None):
     await interaction.response.defer()
-    limit = max(1, min(limit, 20))
 
     async def _run():
         sub = db.get_subscription(str(interaction.guild_id))
+        effective_limit = limit if limit is not None else (sub.get("digest_limit") or 10 if sub else 10)
+        effective_limit = max(1, min(effective_limit, 50))
         clusters = db.get_recent_clusters(category_filter=category)
         if sub and not category:
             clusters = apply_filters(clusters, sub)
         header = f"📰 Latest: {category}" if category else "📰 Latest Stories"
-        await send_clusters(interaction.channel, clusters[:limit], header=header)
+        await send_clusters(interaction.channel, clusters[:effective_limit], header=header)
         await interaction.followup.send("Done.", ephemeral=True)
 
     try:
@@ -427,6 +429,28 @@ async def cmd_setsources(interaction: discord.Interaction, names: str = None):
     if invalid:
         msg += f"\nNot recognised: {', '.join(invalid)}"
     await interaction.response.send_message(msg, ephemeral=True)
+
+
+@bot.tree.command(name="setlimit", description="Set how many stories the auto-digest posts each time (default 10)")
+@app_commands.describe(count="Number of stories per auto-digest (1–50)")
+async def cmd_setlimit(interaction: discord.Interaction, count: int):
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message("You need Manage Channels permission.", ephemeral=True)
+        return
+
+    sub = db.get_subscription(str(interaction.guild_id))
+    if not sub:
+        await interaction.response.send_message("No digest channel set. Run `/setup` first.", ephemeral=True)
+        return
+
+    if count < 1 or count > 50:
+        await interaction.response.send_message("Count must be between 1 and 50.", ephemeral=True)
+        return
+
+    db.upsert_subscription(str(interaction.guild_id), sub["channel_id"], digest_limit=count)
+    await interaction.response.send_message(
+        f"Auto-digest will now post up to **{count}** stories per run.", ephemeral=True
+    )
 
 
 @bot.tree.command(name="setinterval", description="Set how often the digest posts automatically (in hours)")
