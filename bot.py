@@ -481,25 +481,25 @@ async def cmd_setlimit(interaction: discord.Interaction, count: int):
     )
 
 
-@bot.tree.command(name="forcedigest", description="Immediately trigger the auto-digest for this server (for testing)")
-async def cmd_forcedigest(interaction: discord.Interaction):
-    if not interaction.user.guild_permissions.manage_channels:
-        await interaction.response.send_message("You need Manage Channels permission.", ephemeral=True)
-        return
-    await interaction.response.defer(ephemeral=True)
-    loop = asyncio.get_event_loop()
-    sub = await loop.run_in_executor(None, db.get_subscription, str(interaction.guild_id))
-    if not sub:
-        await interaction.followup.send("No digest channel set. Run `/setup` first.", ephemeral=True)
-        return
-    clusters = await loop.run_in_executor(None, db.get_unposted_clusters)
-    filtered = apply_filters(clusters, sub)
-    digest_limit = sub.get("digest_limit") or 10
-    channel = bot.get_channel(int(sub["channel_id"]))
-    await send_clusters(channel, filtered[:digest_limit], header=f"📰 News Digest (limit {digest_limit})")
-    await loop.run_in_executor(None, db.update_last_posted, sub["guild_id"])
-    await loop.run_in_executor(None, db.mark_posted, [c["id"] for c in filtered])
-    await interaction.followup.send(f"Done — posted {min(len(filtered), digest_limit)} stories.", ephemeral=True)
+# @bot.tree.command(name="forcedigest", description="Immediately trigger the auto-digest for this server (for testing)")
+# async def cmd_forcedigest(interaction: discord.Interaction):
+#     if not interaction.user.guild_permissions.manage_channels:
+#         await interaction.response.send_message("You need Manage Channels permission.", ephemeral=True)
+#         return
+#     await interaction.response.defer(ephemeral=True)
+#     loop = asyncio.get_event_loop()
+#     sub = await loop.run_in_executor(None, db.get_subscription, str(interaction.guild_id))
+#     if not sub:
+#         await interaction.followup.send("No digest channel set. Run `/setup` first.", ephemeral=True)
+#         return
+#     clusters = await loop.run_in_executor(None, db.get_unposted_clusters)
+#     filtered = apply_filters(clusters, sub)
+#     digest_limit = sub.get("digest_limit") or 10
+#     channel = bot.get_channel(int(sub["channel_id"]))
+#     await send_clusters(channel, filtered[:digest_limit], header=f"📰 News Digest (limit {digest_limit})")
+#     await loop.run_in_executor(None, db.update_last_posted, sub["guild_id"])
+#     await loop.run_in_executor(None, db.mark_posted, [c["id"] for c in filtered])
+#     await interaction.followup.send(f"Done — posted {min(len(filtered), digest_limit)} stories.", ephemeral=True)
 
 
 @bot.tree.command(name="setinterval", description="Set how often the digest posts automatically (in hours)")
