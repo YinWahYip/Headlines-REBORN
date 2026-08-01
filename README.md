@@ -78,7 +78,7 @@ Block specific categories from appearing in digests. Applies on top of focus.
 Examples:
 ```
 /blacklist topics:Sports, Other
-/blacklist topics:clear
+/blacklist topics:clear     ← Clears blacklist filters
 /blacklist                  ← shows current blacklist
 ```
 
