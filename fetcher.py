@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
 
-FEED_TIMEOUT_SEC = 15  # max seconds to wait for any single feed
+FEED_TIMEOUT_SEC = 7  # max seconds to wait for any single feed
 
 MAX_PER_FEED = 2  # hard cap on new articles pulled per source per fetch
 

@@ -90,18 +90,19 @@ def init_db():
                 last_posted_at  TEXT
             )
         """)
-        # Add columns if upgrading from older schema
-        for col, definition in [
-            ("interval_hours", "INTEGER NOT NULL DEFAULT 24"),
-            ("last_posted_at", "TEXT"),
-            ("blacklist", "TEXT NOT NULL DEFAULT '[]'"),
-            ("sources", "TEXT NOT NULL DEFAULT '[]'"),
-            ("digest_limit", "INTEGER NOT NULL DEFAULT 10"),
-        ]:
-            try:
+    # Add columns if upgrading from older schema — each in its own transaction
+    for col, definition in [
+        ("interval_hours", "INTEGER NOT NULL DEFAULT 24"),
+        ("last_posted_at", "TEXT"),
+        ("blacklist", "TEXT NOT NULL DEFAULT '[]'"),
+        ("sources", "TEXT NOT NULL DEFAULT '[]'"),
+        ("digest_limit", "INTEGER NOT NULL DEFAULT 10"),
+    ]:
+        try:
+            with get_conn() as conn:
                 _execute(conn, f"ALTER TABLE subscriptions ADD COLUMN {col} {definition}")
-            except Exception:
-                pass  # column already exists
+        except Exception:
+            pass  # column already exists
 
 
 # ── Articles ──────────────────────────────────────────────────────────────────
