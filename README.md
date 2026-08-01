@@ -115,8 +115,8 @@ Choose which news sources to include in digests. Default is all sources.
 
 Examples:
 ```
-/setsources names:BBC, NPR
-/setsources names:all
+/setsources names:BBC, NPR  ← Only BBC, NPR will show in digest
+/setsources names:all       ← All Sources
 /setsources                 ← shows current sources
 ```
 
