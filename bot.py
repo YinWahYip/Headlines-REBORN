@@ -201,8 +201,8 @@ async def cmd_setup(interaction: discord.Interaction):
         return
     db.upsert_subscription(str(interaction.guild_id), str(interaction.channel_id))
     await interaction.response.send_message(
-        f"This channel will receive the daily digest at {DIGEST_HOUR_UTC}:00 UTC. "
-        f"Use `/focus` to filter by topic.",
+        "This channel will receive the automatic digest. "
+        "Use `/setinterval` to set how often, `/focus` to filter by topic.",
         ephemeral=True,
     )
 
