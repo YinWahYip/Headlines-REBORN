@@ -209,7 +209,7 @@ async def cmd_digest(interaction: discord.Interaction, category: str = None, lim
         clusters = db.get_recent_clusters(category_filter=category)
         if sub and not category:
             clusters = apply_filters(clusters, sub)
-        header = f"📰 Latest: {category}" if category else f"📰 Latest Stories, limit: {digest_limit}"
+        header = f"📰 Latest: {category}" if category else "📰 Latest Stories"
         await send_clusters(interaction.channel, clusters[:effective_limit], header=header)
         await interaction.followup.send("Done.", ephemeral=True)
 
