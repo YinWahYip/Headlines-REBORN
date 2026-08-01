@@ -1,6 +1,9 @@
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+EST = ZoneInfo("America/New_York")
 
 import discord
 from discord import app_commands
@@ -65,8 +68,8 @@ def make_embed(cluster: dict) -> discord.Embed:
     footer_parts = ["  ·  ".join(outlets)]
     if created_at:
         try:
-            dt = datetime.fromisoformat(created_at)
-            footer_parts.append(dt.strftime("Pulled %b %d %H:%M UTC"))
+            dt = datetime.fromisoformat(created_at).replace(tzinfo=timezone.utc).astimezone(EST)
+            footer_parts.append(dt.strftime("Pulled %b %d %I:%M %p ET"))
         except ValueError:
             pass
     embed.set_footer(text="  ·  ".join(footer_parts))
@@ -356,28 +359,29 @@ async def cmd_status(interaction: discord.Interaction):
     lines = []
 
     if last_fetched_at:
-        lines.append(f"🕐 Last fetch: {last_fetched_at.strftime('%b %d %H:%M UTC')}")
+        et = last_fetched_at.replace(tzinfo=timezone.utc).astimezone(EST)
+        lines.append(f"Last fetch: {et.strftime('%b %d %I:%M %p ET')}")
     else:
-        lines.append("🕐 Last fetch: not yet (restarts clear this)")
+        lines.append("Last fetch: not yet (restarts clear this)")
 
     if sub:
         interval = sub.get("interval_hours", 24)
         last_posted = sub.get("last_posted_at")
-        lines.append(f"📬 Digest interval: every {interval}h")
+        lines.append(f"Digest interval: every {interval}h")
         if last_posted:
             try:
-                dt = datetime.fromisoformat(last_posted)
-                lines.append(f"📤 Last digest posted: {dt.strftime('%b %d %H:%M UTC')}")
+                dt = datetime.fromisoformat(last_posted).replace(tzinfo=timezone.utc).astimezone(EST)
+                lines.append(f"Last digest posted: {dt.strftime('%b %d %I:%M %p ET')}")
                 next_post = dt + timedelta(hours=interval)
-                lines.append(f"⏭ Next digest: {next_post.strftime('%b %d %H:%M UTC')}")
+                lines.append(f"Next digest: {next_post.strftime('%b %d %I:%M %p ET')}")
             except ValueError:
                 pass
         blacklisted = json.loads(sub.get("blacklist") or "[]")
         focused = json.loads(sub.get("categories") or "[]")
         if blacklisted:
-            lines.append(f"🚫 Blocked: {', '.join(blacklisted)}")
+            lines.append(f"Blocked: {', '.join(blacklisted)}")
         if focused:
-            lines.append(f"✅ Focus: {', '.join(focused)}")
+            lines.append(f"Focus: {', '.join(focused)}")
     else:
         lines.append("⚠️ No digest channel set — run `/setup`")
 
