@@ -390,6 +390,7 @@ async def cmd_status(interaction: discord.Interaction):
                 lines.append(f"Last digest posted: {dt.strftime('%b %d %I:%M %p ET')}")
                 next_post = dt + timedelta(hours=interval)
                 lines.append(f"Next digest: {next_post.strftime('%b %d %I:%M %p ET')}")
+                lines.append(f"Current digest limit: {digest_limitlimit}")
             except ValueError:
                 pass
         blacklisted = json.loads(sub.get("blacklist") or "[]")
