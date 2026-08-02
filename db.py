@@ -228,6 +228,11 @@ def get_cluster_articles(cluster_id: int) -> list:
         )
 
 
+def delete_subscription(guild_id: str):
+    with get_conn() as conn:
+        _execute(conn, "DELETE FROM subscriptions WHERE guild_id = %s", (guild_id,))
+
+
 def get_all_subscriptions() -> list:
     with get_conn() as conn:
         return _fetchall(conn, "SELECT * FROM subscriptions")

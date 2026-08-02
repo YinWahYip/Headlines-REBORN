@@ -219,6 +219,22 @@ async def cmd_digest(interaction: discord.Interaction, category: str = None, lim
         await interaction.followup.send("⏱ Timed out — try again in a moment.", ephemeral=True)
 
 
+@bot.tree.command(name="stopdigest", description="Stop automatic digests for this server")
+async def cmd_stopdigest(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message("You need Manage Channels permission.", ephemeral=True)
+        return
+    loop = asyncio.get_event_loop()
+    sub = await loop.run_in_executor(None, db.get_subscription, str(interaction.guild_id))
+    if not sub:
+        await interaction.response.send_message("No digest is set up for this server.", ephemeral=True)
+        return
+    await loop.run_in_executor(None, db.delete_subscription, str(interaction.guild_id))
+    await interaction.response.send_message(
+        "Auto-digest stopped. Run `/setup` to re-enable it.", ephemeral=True
+    )
+
+
 @bot.tree.command(name="setup", description="Set this channel to receive the daily digest")
 async def cmd_setup(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.manage_channels:
