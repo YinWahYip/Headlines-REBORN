@@ -194,10 +194,11 @@ async def digest_loop():
             continue
 
         digest_limit = sub.get("digest_limit") or 10
+        to_send = filtered[:digest_limit]
         try:
-            await send_clusters(channel, filtered[:digest_limit], header=f"📰 News Digest (every {interval_hours}h)")
+            await send_clusters(channel, to_send, header=f"📰 News Digest (every {interval_hours}h)")
             await loop.run_in_executor(None, db.update_last_posted, sub["guild_id"])
-            await loop.run_in_executor(None, db.mark_posted, [c["id"] for c in filtered])
+            await loop.run_in_executor(None, db.mark_posted, [c["id"] for c in to_send])
         except discord.Forbidden:
             print(f"[bot] No permission to post in channel {sub['channel_id']}")
 
