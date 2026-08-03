@@ -97,6 +97,7 @@ def init_db():
         ("blacklist", "TEXT NOT NULL DEFAULT '[]'"),
         ("sources", "TEXT NOT NULL DEFAULT '[]'"),
         ("digest_limit", "INTEGER NOT NULL DEFAULT 10"),
+        ("category_cap", "INTEGER"),
     ]:
         try:
             with get_conn() as conn:
@@ -181,7 +182,8 @@ def mark_posted(cluster_ids: list):
 
 def upsert_subscription(guild_id: str, channel_id: str, categories: list = None,
                         interval_hours: int = None, blacklist: list = None,
-                        sources: list = None, digest_limit: int = None):
+                        sources: list = None, digest_limit: int = None,
+                        category_cap: int = None):
     with get_conn() as conn:
         # Build dynamic update based on what's provided
         fields = {"channel_id": channel_id, "categories": json.dumps(categories or [])}
@@ -193,6 +195,8 @@ def upsert_subscription(guild_id: str, channel_id: str, categories: list = None,
             fields["sources"] = json.dumps(sources)
         if digest_limit is not None:
             fields["digest_limit"] = digest_limit
+        if category_cap is not None:
+            fields["category_cap"] = category_cap
 
         cols = ", ".join(fields.keys())
         placeholders = ", ".join(["%s"] * len(fields))

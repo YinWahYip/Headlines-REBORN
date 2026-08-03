@@ -77,22 +77,32 @@ def make_embed(cluster: dict) -> discord.Embed:
 
 
 def apply_filters(clusters: list, sub: dict) -> list:
-    """Apply category blacklist, category whitelist (focus), and source filter."""
+    """Apply category blacklist, category whitelist (focus), source filter, and per-category cap."""
     blacklist = json.loads(sub.get("blacklist") or "[]")
     whitelist = json.loads(sub.get("categories") or "[]")
     allowed_sources = json.loads(sub.get("sources") or "[]")
+    category_cap = sub.get("category_cap") or 3
+
     result = clusters
     if blacklist:
         result = [c for c in result if c["category"] not in blacklist]
     if whitelist:
         result = [c for c in result if c["category"] in whitelist]
     if allowed_sources:
-        # Keep cluster if at least one of its outlets is in the allowed list
         def has_allowed_source(c):
             outlets = json.loads(c["outlets"]) if isinstance(c["outlets"], str) else c["outlets"]
             return any(o in allowed_sources for o in outlets)
         result = [c for c in result if has_allowed_source(c)]
-    return result
+
+    # Cap stories per category for variety
+    seen: dict[str, int] = {}
+    capped = []
+    for c in result:
+        cat = c["category"]
+        seen[cat] = seen.get(cat, 0) + 1
+        if seen[cat] <= category_cap:
+            capped.append(c)
+    return capped
 
 
 def chunk(lst, size):
@@ -470,6 +480,30 @@ async def cmd_setsources(interaction: discord.Interaction, names: str = None):
     if invalid:
         msg += f"\nNot recognised: {', '.join(invalid)}"
     await interaction.response.send_message(msg, ephemeral=True)
+
+
+@bot.tree.command(name="setcap", description="Set max stories per category per digest (default 3, 0 = no cap)")
+@app_commands.describe(count="Max stories per category (0–10)")
+async def cmd_setcap(interaction: discord.Interaction, count: int):
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message("You need Manage Channels permission.", ephemeral=True)
+        return
+    if count < 0 or count > 10:
+        await interaction.response.send_message("Count must be between 0 and 10.", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    loop = asyncio.get_event_loop()
+    sub = await loop.run_in_executor(None, db.get_subscription, str(interaction.guild_id))
+    if not sub:
+        await interaction.followup.send("No digest channel set. Run `/setup` first.", ephemeral=True)
+        return
+    await loop.run_in_executor(None, lambda: db.upsert_subscription(
+        str(interaction.guild_id), sub["channel_id"], category_cap=count if count > 0 else None
+    ))
+    if count == 0:
+        await interaction.followup.send("Category cap removed — no limit per category.", ephemeral=True)
+    else:
+        await interaction.followup.send(f"Max **{count}** stories per category per digest.", ephemeral=True)
 
 
 @bot.tree.command(name="setlimit", description="Set how many stories the auto-digest posts each time (default 10)")
